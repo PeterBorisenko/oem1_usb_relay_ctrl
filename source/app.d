@@ -44,8 +44,8 @@ extern (C)
 immutable int passWordLength= 4; /////////// MAGIC!
 char[passWordLength] passWord;
 string configFileName= "./config.ini";
-ushort deviceSerialNumber;
-ubyte[2] deviceId;
+ushort/*[maxDevCount]*/ deviceSerialNumber;
+ubyte[2]/*[maxDevCount]*/ deviceId;
 bool passWordAccepted= false;
 
 enum State:int {
@@ -67,50 +67,49 @@ void main()
     File conf;
 
     while (progState != State.EXITING) {
-        writeln("Inside ", progState);
-            switch (progState) {
-                case (State.INITIAL):
-                    readConfig(conf);
-                    break;
+        //writeln("Inside ", progState);
+        switch (progState) {
+            case (State.INITIAL):
+                readConfig(conf);
+                break;
 
-                case (State.SETTING):
-                    if (setPassword(passWord.ptr)) {
-                        conf.writeln(passWord);
-                        progState= State.TESTING;
+            case (State.SETTING):
+                if (setPassword(passWord.ptr)) {
+                    conf.writeln(passWord);
+                    progState= State.TESTING;
+                }
+                break;
+
+            case (State.WORKING):
+                if(!passWordAccepted) {
+                    writeln("Please enter key:");
+                    write(">> ");
+                    auto input= chomp(readln());
+                    if (passWord == input) {
+                        passWordAccepted= true;
+                        writeln("Password is OK!");
                     }
-                    break;
-
-                case (State.WORKING):
-                    if(!passWordAccepted) {
-                        writeln("Please enter key:");
-                        write(">> ");
-                        auto input= chomp(readln());
-                        if (passWord == input) {
-                            passWordAccepted= true;
-                            writeln("Password is OK!");
-                        }
+                }
+                else {
+                    if(getDevice() > 0) {
+                        readCommand();
                     }
-                    else {
-                        if(getDevice() > 0) {
-                            readCommand();
-                        }
+                    else{
+                        progState= State.EXITING;
                     }
-                    break;
+                }
+                break;
 
-                case (State.TESTING):
-                    searchDevice();
-                    progState= State.EXITING;
-                    break;
+            case (State.TESTING):
+                searchDevice();
+                progState= State.EXITING;
+                break;
 
-                default:
-                    throw new Exception(format("Unknown program state: %s", progState));
-            }
-
-        //if (progState > 4) {
-        //    throw new Exception(writeln("Unknown program state ", progState));
-        //}
+            default:
+                throw new Exception(format("Unknown program state: %s", progState));
+        }
     }
-    writeln("Outside ", progState);
+    //writeln("Outside ", progState);
 }
 
 void readConfig(File conf) {
@@ -225,21 +224,18 @@ void readCommand() {
 
 uint searchDevice() {
     auto devCount= VPGetDevCount();
-    //auto devCount= 0;
     writeln("Found ", devCount, " devices");
-    if (devCount) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
+    return (devCount?1:0);
 }
 
 uint getDevice() {
-    if(searchDevice()) {
-        ubyte devId0, devId1;
-        VPGetDevInfo(1, &devId0, &devId1, &deviceSerialNumber);
-        deviceId= [devId0, devId1];
+    //auto devCount= VPGetDevCount();
+    if(searchDevice()/*devCount*/) {
+        ubyte/*[devCount]*/ devId0, devId1;
+        //for (int i= devCount; i > 0; i--) {
+        VPGetDevInfo(/*i*/1, &devId0, &devId1, &deviceSerialNumber/*[i]*/);
+        deviceId/*[i]*/= [devId0, devId1];
+        //}
         return 1;
     }
     return 0;
