@@ -1,6 +1,6 @@
 {
 	"name": "oem1_button",
-	"description": "A minimal D application.",
+	"description": "OEM1 USB Relay Control Interface",
 	"copyright": "Copyright © 2015, Peter Borisenko",
 	"authors": ["Peter Borisenko"],
 	"dependencies": {

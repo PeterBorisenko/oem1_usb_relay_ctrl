@@ -2,6 +2,7 @@ import std.stdio;
 import std.file;
 import std.string;
 import std.conv;
+//import std.exception;
 
 pragma (lib, "vports.lib");
 
@@ -47,8 +48,6 @@ ushort deviceSerialNumber;
 ubyte[2] deviceId;
 bool passWordAccepted= false;
 
-auto relayState= 0;
-
 enum State:int {
     INITIAL= 0,
     SETTING,
@@ -57,12 +56,64 @@ enum State:int {
     EXITING
 };
 
+State progState= State.INITIAL;
+
+
+
 
 void main()
 {
-    State progState= State.INITIAL;
+
     File conf;
 
+    while (progState != State.EXITING) {
+        writeln("Inside ", progState);
+            switch (progState) {
+                case (State.INITIAL):
+                    readConfig(conf);
+                    break;
+
+                case (State.SETTING):
+                    if (setPassword(passWord.ptr)) {
+                        conf.writeln(passWord);
+                        progState= State.TESTING;
+                    }
+                    break;
+
+                case (State.WORKING):
+                    if(!passWordAccepted) {
+                        writeln("Please enter key:");
+                        write(">> ");
+                        auto input= chomp(readln());
+                        if (passWord == input) {
+                            passWordAccepted= true;
+                            writeln("Password is OK!");
+                        }
+                    }
+                    else {
+                        if(getDevice() > 0) {
+                            readCommand();
+                        }
+                    }
+                    break;
+
+                case (State.TESTING):
+                    searchDevice();
+                    progState= State.EXITING;
+                    break;
+
+                default:
+                    throw new Exception(format("Unknown program state: %s", progState));
+            }
+
+        //if (progState > 4) {
+        //    throw new Exception(writeln("Unknown program state ", progState));
+        //}
+    }
+    writeln("Outside ", progState);
+}
+
+void readConfig(File conf) {
     if(!exists(configFileName)) {
         try{
             conf= File(configFileName, "w");
@@ -76,6 +127,7 @@ void main()
         writeln("Configuration file ", configFileName, " created");
         progState= State.SETTING;
     }
+
     else {
         conf= File(configFileName, "r");
         writeln("Configuration file ", configFileName, " opened");
@@ -91,90 +143,7 @@ void main()
                 conf.open(configFileName, "w");
                 progState= State.SETTING;
             }
-
     }
-    while (progState != State.EXITING) {
-        writeln("Inside while State: ", progState); ///////////////////
-        switch (progState) {
-            case State.INITIAL:
-
-                break;
-
-            case State.SETTING:
-                if (setPassword(passWord.ptr)) {
-                    conf.writeln(passWord);
-                    progState= State.TESTING;
-                }
-                break;
-
-            case State.WORKING:
-                if(!passWordAccepted) {
-                    writeln("Please enter key:");
-                    write(">> ");
-                    auto input= chomp(readln());
-                    if (passWord == input) {
-                        passWordAccepted= true;
-                    }
-                }
-                else {
-                    if(searchDevice() > 0) {
-                        writeln("Commands: ON, OFF, TGL, HELP, EXIT");
-                        write(">> ");
-                        auto comm= chomp(readln());
-                        if (comm.length == 2) {
-                            if (comm[0..2] == "ON") {
-                                if(VPSetOutputSinglePort(deviceSerialNumber, 1, 1)) {
-                                    continue;
-                                }
-                            }
-                        }
-                        else if (comm.length == 3) {
-                            if (comm[0..3] == "OFF") {
-                                if(VPSetOutputSinglePort(deviceSerialNumber, 0, 1)) {
-                                    continue;
-                                }
-                            }
-                            else if (comm[0..3] == "TGL") {
-                                ushort ports;
-                                VPGetOutputPorts(deviceSerialNumber, &ports);
-                                if (!ports&0x01) { // Check if channel 0 is LOW
-                                    if(VPSetOutputSinglePort(deviceSerialNumber, 1, 1)) {
-                                        continue;
-                                    }
-                                }
-                                else {
-                                    if(VPSetOutputSinglePort(deviceSerialNumber, 0, 1)) {
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                        else if (comm.length == 4) {
-                            if (comm[0..4] == "EXIT") {
-                                progState= State.EXITING;
-                            }
-                            else if (comm[0..4] == "HELP") {
-                                writeln("Help is not ready yet");
-                            }
-                        }
-                    }
-                }
-                break;
-
-            case State.TESTING:
-                searchDevice();
-                progState= State.EXITING;
-                break;
-
-            default:
-                progState= State.EXITING;
-                break;
-        }
-
-        continue;
-    }
-
-    writeln("Outside while State: ", progState);
 }
 
 uint setPassword(char * passWord) {
@@ -189,12 +158,68 @@ uint setPassword(char * passWord) {
         return 0;
     }
     else {
-        writeln("Password OK!");
+        writeln("Password accepted!");
         for(int i= 0; i < 4; i++) {
             *(passWord)= (pass[i]);
             passWord++;
         }
         return 1;
+    }
+}
+
+void readCommand() {
+    writeln("Commands: ON, OFF, TGL, READ, HELP, EXIT");
+    write(">> ");
+    auto comm= chomp(readln()).toUpper;
+    if (comm.length == 2) {
+        if (comm[0..2] == "ON") {
+            VPSetOutputSinglePort(deviceSerialNumber, 1, 1);
+        }
+        else {
+            writeln("Illegal command");
+        }
+    }
+    else if (comm.length == 3) {
+        if (comm[0..3] == "OFF") {
+            VPSetOutputSinglePort(deviceSerialNumber, 0, 1);
+        }
+        else if (comm[0..3] == "TGL") {
+            ushort ports;
+            VPGetOutputPorts(deviceSerialNumber, &ports);
+            if (!ports&0x01) { // Check if channel 0 is LOW
+                VPSetOutputSinglePort(deviceSerialNumber, 1, 1);
+            }
+            else {
+                VPSetOutputSinglePort(deviceSerialNumber, 0, 1);
+            }
+        }
+        else {
+            writeln("Illegal command");
+        }
+    }
+    else if (comm.length == 4) {
+        if (comm[0..4] == "EXIT") {
+            progState= State.EXITING;
+        }
+        else if (comm[0..4] == "HELP") {
+            writeln("Help is not ready yet");
+        }
+        else if (comm[0..4] == "READ") {
+            writeln("Relay channels : ");
+            ushort ports;
+            VPGetOutputPorts(deviceSerialNumber, &ports);
+            for(int i= 15;i >= 0; i--) {
+                write("channel ", i, " : \t");
+                write((((ports >> i)&0x01)?"ON":"OFF"));
+                write("\n");
+            }
+        }
+        else {
+            writeln("Illegal command");
+        }
+    }
+    else {
+            writeln("Illegal command");
     }
 }
 
@@ -211,8 +236,10 @@ uint searchDevice() {
 }
 
 uint getDevice() {
-    if(searchDevice) {
-        VPGetDevInfo(1, &(deviceId[0]), &(deviceId[1]), &deviceSerialNumber);
+    if(searchDevice()) {
+        ubyte devId0, devId1;
+        VPGetDevInfo(1, &devId0, &devId1, &deviceSerialNumber);
+        deviceId= [devId0, devId1];
         return 1;
     }
     return 0;
