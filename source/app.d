@@ -41,9 +41,9 @@ extern (C)
 // VPSetOutputSinglePort - установить состояние выходов (setorclear: 1= ON, 0= OFF; sn = 0 - все найденные устрйоства)
 
 
-immutable int passWordLength= 4; /////////// MAGIC!
+immutable int passWordLength= 4;
 char[passWordLength] passWord;
-string configFileName= "./config.ini";
+string configFileName= "config.ini";
 ushort/*[maxDevCount]*/ deviceSerialNumber;
 ubyte[2]/*[maxDevCount]*/ deviceId;
 bool passWordAccepted= false;
@@ -74,8 +74,10 @@ void main()
                 break;
 
             case (State.SETTING):
-                if (setPassword(passWord.ptr)) {
+                if (setPassword()) {
+                    conf.open(configFileName, "w");
                     conf.writeln(passWord);
+                    conf.close();
                     progState= State.TESTING;
                 }
                 break;
@@ -95,14 +97,19 @@ void main()
                         readCommand();
                     }
                     else{
-                        progState= State.EXITING;
+                        progState= State.TESTING;
                     }
                 }
                 break;
 
             case (State.TESTING):
-                searchDevice();
-                progState= State.EXITING;
+                if (searchDevice() < 1) {
+                    writeln("Devices not found. Exiting.");
+                    progState= State.EXITING;
+                }
+                else {
+                    progState= State.WORKING;
+                }
                 break;
 
             default:
@@ -129,38 +136,36 @@ void readConfig(File conf) {
 
     else {
         conf= File(configFileName, "r");
-        writeln("Configuration file ", configFileName, " opened");
+        //writeln("Configuration file ", configFileName, " opened");
 
             auto dat= chomp(conf.readln());
             if ((dat.length != 0)&&(!conf.eof())) {
                 passWord= dat.dup;
-                progState= State.WORKING;
+                progState= State.TESTING;
                 conf.close();
             }
             else {
                 conf.close();
-                conf.open(configFileName, "w");
                 progState= State.SETTING;
             }
     }
 }
 
-uint setPassword(char * passWord) {
-    writeln("Write new passWord");
+uint setPassword() {
+    writeln("Enter new key");
     auto pass= chomp(readln());
     if (pass.length > passWordLength) {
-        writeln("Too long password");
+        writeln("Too long key");
         return 0;
     }
     else if (pass.length < passWordLength) {
-        writeln("Too short password");
+        writeln("Too short key");
         return 0;
     }
     else {
-        writeln("Password accepted!");
+        writeln("Key accepted!");
         for(int i= 0; i < 4; i++) {
-            *(passWord)= (pass[i]);
-            passWord++;
+            passWord[i]= (pass[i]);
         }
         return 1;
     }
@@ -204,7 +209,7 @@ void readCommand() {
             writeln("Help is not ready yet");
         }
         else if (comm[0..4] == "READ") {
-            writeln("Relay channels : ");
+            writeln(format("Relay channels (device %s) : ", deviceSerialNumber));
             ushort ports;
             VPGetOutputPorts(deviceSerialNumber, &ports);
             for(int i= 15;i >= 0; i--) {
@@ -224,7 +229,7 @@ void readCommand() {
 
 uint searchDevice() {
     auto devCount= VPGetDevCount();
-    writeln("Found ", devCount, " devices");
+    //writeln("Found ", devCount, " devices");
     return (devCount?1:0);
 }
 
@@ -239,22 +244,4 @@ uint getDevice() {
         return 1;
     }
     return 0;
-}
-
-void stop(ushort message) {
-    writeln(message);
-    writeln("Press any key for continue...");
-    readln();
-}
-
-void stop(string message) {
-    writeln(message);
-    writeln("Press any key for continue...");
-    readln();
-}
-
-void stop(State message) {
-    writeln(message);
-    writeln("Press any key for continue...");
-    readln();
 }
